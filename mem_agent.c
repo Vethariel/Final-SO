@@ -72,12 +72,25 @@ int main(int argc, char const *argv[]) {
     }
     int socket_fd = TCP_client_init(argv[1], atoi(argv[2]));
     long mem_data[4];
-    mem_proc(mem_data);
+    
+    while(1){
+        mem_proc(mem_data);
+        char message[BUFFER_SIZE];
+        snprintf(message, BUFFER_SIZE, "MEM;%s;%ld;%ld;%ld;%ld\n", argv[3], mem_data[0], mem_data[1], mem_data[2], mem_data[3]);
+        if(send(socket_fd, message, strlen(message), 0) < 0) {
+            perror("Send failed");
+            close(socket_fd);
+            exit(-1);
+        }
+        if(recv(socket_fd, message, BUFFER_SIZE, 0) < 0) {
+            perror("Receive failed");
+            close(socket_fd);
+            exit(-1);
+        }
 
-    char message[BUFFER_SIZE];
-    snprintf(message, BUFFER_SIZE, "MEM;%s;%ld;%ld;%ld;%ld\n", argv[3], mem_data[0], mem_data[1], mem_data[2], mem_data[3]);
-    send(socket_fd, message, strlen(message), 0);
-    printf("Message sent to server\n");
+        printf("Server response: %s", message);
+        sleep(2);
+    }
 
     close(socket_fd);
     return 0;

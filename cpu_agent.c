@@ -32,6 +32,8 @@ int TCP_client_init(const char *server_ip, int port) {
         error("Connection Failed");
     }
 
+    printf("Connected to server %s:%d\n", server_ip, port);
+
     return sock;
 }
 
@@ -75,14 +77,27 @@ int main(int argc, char const *argv[]) {
     }
     int socket_fd = TCP_client_init(argv[1], atoi(argv[2]));
     unsigned long cpu_data[8];
-    cpu_proc(cpu_data);
 
-    char message[BUFFER_SIZE];
-    snprintf(message, BUFFER_SIZE, "CPU;%s;%ld;%ld;%ld;%ld;%ld;%ld;%ld;%ld\n", argv[3],
-             cpu_data[0], cpu_data[1], cpu_data[2], cpu_data[3],
-             cpu_data[4], cpu_data[5], cpu_data[6], cpu_data[7]);
-    send(socket_fd, message, strlen(message), 0);
-    printf("Message sent to server\n");
+    while(1){
+        cpu_proc(cpu_data);
+        char message[BUFFER_SIZE];
+        snprintf(message, BUFFER_SIZE, "CPU;%s;%ld;%ld;%ld;%ld;%ld;%ld;%ld;%ld\n", argv[3],
+                 cpu_data[0], cpu_data[1], cpu_data[2], cpu_data[3],
+                 cpu_data[4], cpu_data[5], cpu_data[6], cpu_data[7]);
+        if(send(socket_fd, message, strlen(message), 0) < 0) {
+            perror("Send failed");
+            close(socket_fd);
+            exit(-1);
+        }
+        if(recv(socket_fd, message, BUFFER_SIZE, 0) < 0) {
+            perror("Receive failed");
+            close(socket_fd);
+            exit(-1);
+        }
+
+        printf("Server response: %s", message);
+        sleep(2);
+    }
 
     close(socket_fd);
     return 0;
