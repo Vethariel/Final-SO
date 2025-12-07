@@ -6,7 +6,6 @@
 # include <netinet/in.h>
 # include <arpa/inet.h>
 
-#define PORT 8585
 #define BUFFER_SIZE 1024
 
 void error(const char *msg) {
@@ -16,7 +15,7 @@ void error(const char *msg) {
 
 
 
-int TCP_server_init() {
+int TCP_server_init(int port) {
     int server_fd, new_socket;
     struct sockaddr_in address;
     int opt = 1;
@@ -32,7 +31,7 @@ int TCP_server_init() {
 
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    address.sin_port = htons(port);
 
     if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         error("Bind failed");
@@ -42,9 +41,8 @@ int TCP_server_init() {
         error("Listen failed");
     }
 
-    printf("Server listening on port %d\n", PORT);
+    printf("Server listening on port %d\n", port);
 
-    // Accepting a connection
     if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
         error("Accept failed");
     }
@@ -52,16 +50,18 @@ int TCP_server_init() {
     return new_socket;
 }
 
-int main() {
-    int socket_fd = TCP_server_init();
+int main(int argc, char const *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+        exit(1);
+    }
+    int socket_fd = TCP_server_init(atoi(argv[1]));
     char buffer[BUFFER_SIZE] = {0};
     int valread;
 
-    // Read data from client
     valread = read(socket_fd, buffer, BUFFER_SIZE);
-    printf("Received data: %s\n", buffer);
+    printf("%s", buffer);
 
-    // Close the socket
     close(socket_fd);
     return 0;
 }
