@@ -1,7 +1,7 @@
 # include <stdio.h>
 #include <stdlib.h>
 
-void mem_proc(char* mem_data) {
+void mem_proc(long* mem_data) {
     FILE *fp;
     char buffer[255];
     long mem_total = 0, mem_free = 0, swap_total = 0, swap_free = 0;
@@ -22,18 +22,16 @@ void mem_proc(char* mem_data) {
             continue;
         }
     }
-    sprintf(mem_data, "%ld;%ld;%ld;%ld",
-         (mem_total-mem_free)/1024,
-          mem_free/1024, 
-          swap_total/1024,
-          swap_free/1024);
-
+    mem_data[0] = (mem_total- mem_free)/1024;
+    mem_data[1] = mem_free/1024;
+    mem_data[2] = swap_total/1024; 
+    mem_data[3] = swap_free/1024;
     fclose(fp);
 }
 
 int main(){
-    char mem_data[256];
+    long mem_data[4];
     mem_proc(mem_data);
-    printf("%s\n", mem_data);
+    printf("Total Memory MB: %ld kB\n", mem_data[0]);
     return 0;
 }

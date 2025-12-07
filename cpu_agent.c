@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void cpu_proc(char *cpu_data)
+
+void cpu_proc(unsigned long *cpu_data)
 {
     FILE *fp;
     char cpu_label[5];
@@ -16,8 +17,14 @@ void cpu_proc(char *cpu_data)
     if (fscanf(fp, "%4s %lu %lu %lu %lu %lu %lu %lu %lu",
                cpu_label,&user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal) == 9)
     {
-        sprintf(cpu_data, "%lu;%lu;%lu;%lu;%lu;%lu;%lu;%lu",
-                user, nice, system, idle, iowait, irq, softirq, steal);
+        cpu_data[0] = user;
+        cpu_data[1] = nice;
+        cpu_data[2] = system;
+        cpu_data[3] = idle;
+        cpu_data[4] = iowait;
+        cpu_data[5] = irq;
+        cpu_data[6] = softirq;
+        cpu_data[7] = steal;
     }
     else
     {
@@ -30,8 +37,8 @@ void cpu_proc(char *cpu_data)
 
 int main()
 {
-    char cpu_data[256];
+    unsigned long cpu_data[8];
     cpu_proc(cpu_data);
-    printf("%s\n", cpu_data);
+    printf("User Time: %lu\n", cpu_data[0]);
     return 0;
 }
