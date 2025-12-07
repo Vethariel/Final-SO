@@ -2,11 +2,13 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/sem.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -35,6 +37,7 @@ enum agent_type {
 struct collector {
     int shmid;
     key_t key;
+    int semid;
     struct host_info *shared_host_info;
     int client_sock;
     int host_index;
@@ -50,6 +53,13 @@ static int find_or_create_host_slot(struct host_info *hosts, const char *ip);
 static void update_cpu_fields(struct host_info *hosts, int idx, const struct host_info *parsed);
 static void update_mem_fields(struct host_info *hosts, int idx, const struct host_info *parsed);
 static void zero_fields_on_disconnect(struct host_info *hosts, int idx, enum agent_type type);
+static void lock_shared(int semid);
+static void unlock_shared(int semid);
+static void cleanup_ipc(void);
+static void handle_signal(int sig);
+
+static int g_shmid = -1;
+static int g_semid = -1;
 
 static void error(const char *msg) {
     perror(msg);
@@ -182,6 +192,37 @@ static void zero_fields_on_disconnect(struct host_info *hosts, int idx, enum age
     }
 }
 
+static void lock_shared(int semid) {
+    struct sembuf op = {0, -1, 0};
+    if (semop(semid, &op, 1) == -1) {
+        error("semop lock failed");
+    }
+}
+
+static void unlock_shared(int semid) {
+    struct sembuf op = {0, 1, 0};
+    if (semop(semid, &op, 1) == -1) {
+        error("semop unlock failed");
+    }
+}
+
+static void cleanup_ipc(void) {
+    if (g_shmid != -1) {
+        shmctl(g_shmid, IPC_RMID, NULL);
+        g_shmid = -1;
+    }
+    if (g_semid != -1) {
+        semctl(g_semid, 0, IPC_RMID);
+        g_semid = -1;
+    }
+}
+
+static void handle_signal(int sig) {
+    (void)sig;
+    cleanup_ipc();
+    _exit(0);
+}
+
 static void *recollector(void *collector_arg) {
     struct collector *ctx = (struct collector *)collector_arg;
     int client_sock = ctx->client_sock;
@@ -218,11 +259,13 @@ static void *recollector(void *collector_arg) {
         }
 
         if (ctx->shared_host_info != NULL) {
+            lock_shared(ctx->semid);
             if (msg_type == AGENT_CPU) {
                 update_cpu_fields(ctx->shared_host_info, ctx->host_index, &parsed);
             } else if (msg_type == AGENT_MEM) {
                 update_mem_fields(ctx->shared_host_info, ctx->host_index, &parsed);
             }
+            unlock_shared(ctx->semid);
         }
         send(client_sock, "Data received\n", 14, 0);
     }
@@ -234,7 +277,9 @@ static void *recollector(void *collector_arg) {
     }
 
     if (ctx->shared_host_info != NULL && ctx->host_index >= 0) {
+        lock_shared(ctx->semid);
         zero_fields_on_disconnect(ctx->shared_host_info, ctx->host_index, ctx->expected_type);
+        unlock_shared(ctx->semid);
     }
 
     close(client_sock);
@@ -272,9 +317,37 @@ int main(int argc, char const *argv[]) {
     }
     memset(shared_hosts_info, 0, sizeof(struct host_info) * MAX_HOSTS);
 
+    key_t sem_key = ftok("collector.c", 'S');
+    if (sem_key == -1) {
+        error("ftok sem failed");
+    }
+
+    int semid = semget(sem_key, 1, 0666 | IPC_CREAT);
+    if (semid == -1) {
+        error("semget failed");
+    }
+
+    union semun {
+        int val;
+        struct semid_ds *buf;
+        unsigned short *array;
+        struct seminfo *__buf;
+    } sem_arg;
+    sem_arg.val = 1;
+    if (semctl(semid, 0, SETVAL, sem_arg) == -1) {
+        error("semctl failed");
+    }
+
+    g_shmid = shmid;
+    g_semid = semid;
+    atexit(cleanup_ipc);
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+
     struct collector collector_data;
     collector_data.shmid = shmid;
     collector_data.key = key;
+    collector_data.semid = semid;
     collector_data.shared_host_info = shared_hosts_info;
     collector_data.host_index = -1;
     collector_data.expected_type = AGENT_UNKNOWN;
